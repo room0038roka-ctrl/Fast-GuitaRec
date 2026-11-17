@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#18181b">
+    <meta name="mobile-web-app-capable" content="yes">
+    <title>Android Guitar Studio</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 製品版向けのネイティブアプリ化スタイル */
+        body {
+            -webkit-user-select: none; /* テキスト選択禁止 */
+            user-select: none;
+            -webkit-touch-callout: none; /* 長押しポップアップメニュー禁止 */
+            overscroll-behavior-y: none; /* 下スワイプでのページリロード(引っ張り更新)を防止 */
+            touch-action: pan-x pan-y; /* ダブルタップズーム等の防止 */
+        }
+        
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 20px;
+            width: 20px;
+            border-radius: 50%;
+            background: #f59e0b;
+            cursor: pointer;
+            margin-top: -8px;
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 6px;
+            cursor: pointer;
+            background: #475569;
+            border-radius: 3px;
+        }
+        /* カスタムファイルインプット */
+        input[type="file"]::file-selector-button {
+            border: none;
+            background: #52525b;
+            padding: 8px 12px;
+            border-radius: 6px;
+            color: white;
+            cursor: pointer;
+            transition: background .2s ease-in-out;
+            font-size: 12px;
+        }
+        input[type="file"]::file-selector-button:hover {
+            background: #3f3f46;
+        }
+        /* アコーディオンのデフォルト三角マークを消す */
+        details > summary::-webkit-details-marker {
+            display: none;
+        }
+    </style>
+</head>
+<body class="bg-zinc-900 text-zinc-100 min-h-screen font-sans">
+    <div class="max-w-md mx-auto bg-zinc-800 min-h-screen shadow-2xl border-x border-zinc-700 flex flex-col">
+        
+        <!-- Header -->
+        <div class="bg-zinc-950 p-4 border-b border-zinc-700 flex justify-between items-center sticky top-0 z-10">
+            <h1 class="text-xl font-bold text-amber-500">Guitar Studio <span class="text-xs text-zinc-400">for Android</span></h1>
+            <button id="btn-init" class="bg-amber-600 hover:bg-amber-500 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-lg">
+                マイク接続＆起動
+            </button>
+        </div>
+
+        <div id="warning-msg" class="bg-blue-900/50 text-blue-200 text-xs p-3 border-b border-blue-800">
+            ※有線イヤホンを接続してご使用ください。
+        </div>
+
+    <!-- Backing Track Section -->
+    <div class="p-4 bg-zinc-900 border-b border-zinc-700">
+        <label class="block text-xs font-medium text-zinc-400 mb-1">Backing Track (MP3/WAV)</label>
+        <input type="file" id="bt-upload" accept="audio/mpeg, audio/wav" class="text-sm text-zinc-400 w-full mb-2">
+        <audio id="backing-audio" class="hidden"></audio>
+        <button id="btn-bt-play" class="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded text-sm font-bold w-full disabled:opacity-50 transition" disabled>Play Backing Track</button>
+    </div>
+
+    <!-- ===== NEW: Input Level Meter ===== -->
+    <div class="px-4 py-2 bg-zinc-950 border-b border-zinc-800 flex items-center gap-3">
+        <span class="text-[10px] text-zinc-500 font-bold tracking-wider">INPUT</span>
+        <div class="h-2.5 flex-1 bg-zinc-800 rounded-full overflow-hidden shadow-inner">
+            <div id="meter-level" class="h-full bg-green-500 w-0 transition-all duration-75"></div>
+        </div>
+    </div>
+
+    <!-- Tone Settings (Accordion UI for Mobile) -->
+    <div class="p-4 flex-1 overflow-y-auto space-y-3 pb-24">
+        <h2 class="text-xs font-bold text-zinc-500 uppercase tracking-wider border-b border-zinc-800 pb-1 mb-2">Tone Settings (引継ぎ保存)</h2>
+            
+        <!-- De-Reverb -->
+        <details class="bg-zinc-800 rounded-xl border border-zinc-700 shadow-sm group" open>
+            <summary class="p-4 font-bold text-sm text-white cursor-pointer select-none outline-none flex justify-between items-center">
+                <span>De-Reverb (部屋鳴りカット)</span>
+                <div class="flex items-center gap-3">
+                    <span id="val-gate" class="text-xs font-mono text-amber-400 font-normal">20%</span>
+                    <span class="text-xs text-zinc-500 group-open:rotate-180 transition-transform">▼</span>
+                </div>
+            </summary>
+            <div class="px-4 pb-4 pt-1 border-t border-zinc-700/50 mt-1">
+                <input type="range" id="knob-gate" min="0" max="100" value="20" class="mt-2">
+                <p class="text-[10px] text-zinc-400 mt-2">※右に回しすぎると音がブツブツ途切れます</p>
+            </div>
+        </details>
+
+        <!-- Amp Tone Stack -->
+        <details class="bg-zinc-800 rounded-xl border border-zinc-700 shadow-sm group" open>
+            <summary class="p-4 font-bold text-sm text-white cursor-pointer select-none outline-none flex justify-between items-center">
+                <span>Amp Head (EQ & Drive)</span>
+                <div class="flex items-center gap-3">
+                    <span class="text-[10px] text-zinc-400 font-normal">真空管モデリング</span>
+                    <span class="text-xs text-zinc-500 group-open:rotate-180 transition-transform">▼</span>
+                </div>
+            </summary>
+            <div class="px-4 pb-4 pt-3 border-t border-zinc-700/50 grid grid-cols-2 gap-x-4 gap-y-5">
+                <div class="col-span-2">
+                    <div class="flex justify-between items-center mb-1">
+                        <span class="text-xs font-bold text-zinc-300">Gain (歪み)</span>
+                        <span id="val-gain" class="text-xs font-mono text-amber-400">50</span>
+                    </div>
+                    <input type="range" id="knob-gain" min="0" max="100" value="50">
+                </div>
+                <div>
+                    <div class="flex justify-between items-center mb-1">
+                        <span class="text-xs font-bold text-zinc-300">Bass</span>
+                        <span id="val-bass" class="text-xs font-mono text-amber-400">50</span>
+                    </div>
+                    <input type="range" id="knob-bass" min="0" max="100" value="50">
+                </div>
+                <div>
+                    <div class="flex justify-between items-center mb-1">
+                        <span class="text-xs font-bold text-zinc-300">Middle</span>
+                        <span id="val-mid" class="text-xs font-mono text-amber-400">50</span>
+                    </div>
+                    <input type="range" id="knob-mid" min="0" max="100" value="50">
+                </div>
+                <div>
+                    <div class="flex justify-between items-center mb-1">
+                        <span class="text-xs font-bold text-zinc-300">Treble</span>
+                        <span id="val-treble" class="text-xs font-mono text-amber-400">50</span>
+                    </div>
+                    <input type="range" id="knob-treble" min="0" max="100" value="50">
+                </div>
+                <div>
+                    <div class="flex justify-between items-center mb-1">
+                        <span class="text-xs font-bold text-zinc-300">Presence</span>
+                        <span id="val-presence" class="text-xs font-mono text-amber-400">50</span>
+                    </div>
+                    <input type="range" id="knob-presence" min="0" max="100" value="50">
+                </div>
+            </div>
+        </details>
+
+        <!-- External IR Cabinet Simulator -->
+        <details class="bg-zinc-800 rounded-xl border border-amber-500/40 shadow-sm group">
+            <summary class="p-4 font-bold text-sm text-amber-500 cursor-pointer select-none outline-none flex justify-between items-center">
+                <span>Cab Sim (フリーIR読込)</span>
+                <div class="flex items-center gap-2">
+                    <span id="ir-status" class="text-[10px] bg-red-900 text-red-200 px-2 py-0.5 rounded-full">未読込</span>
+                    <span class="text-xs text-zinc-500 group-open:rotate-180 transition-transform">▼</span>
+                </div>
+            </summary>
+            <div class="px-4 pb-4 pt-3 border-t border-amber-900/50">
+                <p class="text-[10px] text-zinc-400 mb-3">フリーのキャビネットIR(.wav)を読み込むと、リアルなアンプの鳴りに変化します。一度読み込むと内部に自動保存されます。</p>
+                <div class="flex gap-2 items-center">
+                    <input type="file" id="ir-upload" accept="audio/wav" class="text-sm text-zinc-400 w-full">
+                    <button id="btn-clear-ir" class="hidden text-[10px] bg-zinc-700 text-zinc-300 hover:bg-zinc-600 px-3 py-2 rounded transition whitespace-nowrap">クリア</button>
+                </div>
+            </div>
+        </details>
+        
+        <!-- Reverb -->
+        <details class="bg-zinc-800 rounded-xl border border-zinc-700 shadow-sm group">
+            <summary class="p-4 font-bold text-sm text-white cursor-pointer select-none outline-none flex justify-between items-center">
+                <span>Reverb (空間系)</span>
+                <span class="text-xs text-zinc-500 group-open:rotate-180 transition-transform">▼</span>
+            </summary>
+            <div class="px-4 pb-4 pt-3 border-t border-zinc-700/50 grid grid-cols-2 gap-4">
+                <div>
+                    <div class="flex justify-between items-center mb-1">
+                        <span class="text-xs font-bold text-zinc-300">Mix (バランス)</span>
+                        <span id="val-rev-mix" class="text-xs font-mono text-amber-400">20%</span>
+                    </div>
+                    <input type="range" id="knob-rev-mix" min="0" max="100" value="20">
+                </div>
+                <div>
+                    <div class="flex justify-between items-center mb-1">
+                        <span class="text-xs font-bold text-zinc-300">Size (広さ)</span>
+                        <span id="val-rev-time" class="text-xs font-mono text-amber-400">50</span>
+                    </div>
+                    <input type="range" id="knob-rev-time" min="1" max="100" value="50">
+                </div>
+            </div>
+        </details>
+
+        <!-- System Settings (Latency & Volume) -->
+        <details class="bg-zinc-800 rounded-xl border border-zinc-700 shadow-sm group">
+            <summary class="p-4 font-bold text-sm text-white cursor-pointer select-none outline-none flex justify-between items-center">
+                <span>System (音量・ズレ補正)</span>
+                <span class="text-xs text-zinc-500 group-open:rotate-180 transition-transform">▼</span>
+            </summary>
+            <div class="px-4 pb-4 pt-3 border-t border-zinc-700/50 space-y-4">
+                <div>
+                    <div class="flex justify-between items-center mb-1">
+                        <span class="text-xs font-bold text-zinc-300">Latency Offset (ズレ補正)</span>
+                        <span id="val-latency" class="text-xs font-mono text-amber-400">0 ms</span>
+                    </div>
+                    <input type="range" id="knob-latency" min="-500" max="500" value="0">
+                </div>
+                <div>
+                    <div class="flex justify-between items-center mb-1">
+                        <span class="text-xs font-bold text-zinc-300">Master Volume (録音音量)</span>
+                        <span id="val-volume" class="text-xs font-mono text-amber-400">100%</span>
+                    </div>
+                    <input type="range" id="knob-volume" min="0" max="200" value="100">
+                </div>
+                <div>
+                    <div class="flex justify-between items-center mb-1">
+                        <span class="text-xs font-bold text-zinc-300">Mic Monitor Vol (イヤホン音量)</span>
+                        <span id="val-monitor" class="text-xs font-mono text-amber-400">100%</span>
+                    </div>
+                    <input type="range" id="knob-monitor" min="0" max="200" value="100">
+                </div>
+            </div>
+        </details>
+    </div>
+
+    <!-- Recording Controls (Fixed to bottom) -->
+        <div class="bg-zinc-950 p-4 border-t border-zinc-700 fixed bottom-0 w-full max-w-md">
+            <div class="flex gap-4">
+                <button id="btn-record" class="flex-1 bg-red-600 hover:bg-red-500 text-white font-bold py-3 rounded-xl shadow-lg flex justify-center items-center gap-2 opacity-50 cursor-not-allowed" disabled>
+                    <div class="w-3 h-3 bg-white rounded-full animate-pulse hidden" id="record-indicator"></div>
+                    <span id="record-text">REC (録音開始)</span>
+                </button>
+            </div>
+            
+            <!-- Result Player (Hidden initially) -->
+            <div id="result-area" class="mt-3 hidden flex-col gap-2">
+                <audio id="audio-playback" controls class="w-full h-10 rounded"></audio>
+                <a id="btn-download" class="text-center block w-full bg-zinc-700 hover:bg-zinc-600 text-white text-sm py-2 rounded">データを保存 (.webm)</a>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        let audioCtx;
+        let micStream;
+        let micSource;
+        let analyserNode; // 追加：メーター用
+        let meterArray;   // 追加：メーター用
+        let gateNode;
+        let driveNode;
+        let bassNode, midNode, trebleNode, presenceNode; // 追加のEQノード
+        let convolverNode; // IRを処理するノード
+        let reverbConvolver, reverbDryGain, reverbWetGain; // リバーブ用ノード
+        let lastReverbTime = -1;
+        let outputGainNode;
+        let monitorGainNode;
+        let recordDelayNode;
+        let backingSource;
+        let destinationNode;
+        let mediaRecorder;
+        let recordedChunks = [];
+        let isRecording = false;
+        let isIRLoaded = false;
+
+        const btnInit = document.getElementById('btn-init');
+        const btnRecord = document.getElementById('btn-record');
+        const recordText = document.getElementById('record-text');
+        const recordIndicator = document.getElementById('record-indicator');
+        const irUpload = document.getElementById('ir-upload');
+        const irStatus = document.getElementById('ir-status');
+        const btnClearIr = document.getElementById('btn-clear-ir');
+        
+        const knobGate = document.getElementById('knob-gate');
+        const knobGain = document.getElementById('knob-gain');
+        const knobBass = document.getElementById('knob-bass');
+        const knobMid = document.getElementById('knob-mid');
+        const knobTreble = document.getElementById('knob-treble');
+        const knobPresence = document.getElementById('knob-presence');
+        const knobRevMix = document.getElementById('knob-rev-mix');
+        const knobRevTime = document.getElementById('knob-rev-time');
+        const knobLatency = document.getElementById('knob-latency');
+        const knobVolume = document.getElementById('knob-volume');
+        const knobMonitor = document.getElementById('knob-monitor');
+        
+        const btUpload = document.getElementById('bt-upload');
+        const btnBtPlay = document.getElementById('btn-bt-play');
+        const backingAudio = document.getElementById('backing-audio');
+        let isBtPlaying = false;
+
+        function loadSettings() {
+            if(localStorage.getItem('guitar_gate')) knobGate.value = localStorage.getItem('guitar_gate');
+            if(localStorage.getItem('guitar_gain')) knobGain.value = localStorage.getItem('guitar_gain');
+            if(localStorage.getItem('guitar_bass')) knobBass.value = localStorage.getItem('guitar_bass');
+            if(localStorage.getItem('guitar_mid')) knobMid.value = localStorage.getItem('guitar_mid');
+            if(localStorage.getItem('guitar_treble')) knobTreble.value = localStorage.getItem('guitar_treble');
+            if(localStorage.getItem('guitar_presence')) knobPresence.value = localStorage.getItem('guitar_presence');
+            if(localStorage.getItem('guitar_rev_mix')) knobRevMix.value = localStorage.getItem('guitar_rev_mix');
+            if(localStorage.getItem('guitar_rev_time')) knobRevTime.value = localStorage.getItem('guitar_rev_time');
+            if(localStorage.getItem('guitar_latency')) knobLatency.value = localStorage.getItem('guitar_latency');
+            if(localStorage.getItem('guitar_volume')) knobVolume.value = localStorage.getItem('guitar_volume');
+            if(localStorage.getItem('guitar_monitor')) knobMonitor.value = localStorage.getItem('guitar_monitor');
+            updateUI();
+        }
+        
+        function saveSettings() {
+            localStorage.setItem('guitar_gate', knobGate.value);
+            localStorage.setItem('guitar_gain', knobGain.value);
+            localStorage.setItem('guitar_bass', knobBass.value);
+            localStorage.setItem('guitar_mid', knobMid.value);
+            localStorage.setItem('guitar_treble', knobTreble.value);
+            localStorage.setItem('guitar_presence', knobPresence.value);
+            localStorage.setItem('guitar_rev_mix', knobRevMix.value);
+            localStorage.setItem('guitar_rev_time', knobRevTime.value);
+            localStorage.setItem('guitar_latency', knobLatency.value);
+            localStorage.setItem('guitar_volume', knobVolume.value);
+            localStorage.setItem('guitar_monitor', knobMonitor.value);
+        }
+
+        function updateUI() {
+            document.getElementById('val-gate').innerText = `${knobGate.value}%`;
+            document.getElementById('val-gain').innerText = `${knobGain.value}`;
+            document.getElementById('val-bass').innerText = `${knobBass.value}`;
+            document.getElementById('val-mid').innerText = `${knobMid.value}`;
+            document.getElementById('val-treble').innerText = `${knobTreble.value}`;
+            document.getElementById('val-presence').innerText = `${knobPresence.value}`;
+            document.getElementById('val-rev-mix').innerText = `${knobRevMix.value}%`;
+            document.getElementById('val-rev-time').innerText = `${knobRevTime.value}`;
+            document.getElementById('val-latency').innerText = `${knobLatency.value} ms`;
+            document.getElementById('val-volume').innerText = `${knobVolume.value}%`;
+            document.getElementById('val-monitor').innerText = `${knobMonitor.value}%`;
+            updateAudioNodes();
+        }
+
+        [knobGate, knobGain, knobBass, knobMid, knobTreble, knobPresence, knobRevMix, knobRevTime, knobLatency, knobVolume, knobMonitor].forEach(knob => {
+            knob.addEventListener('input', () => {
+                updateUI();
+                saveSettings();
+            });
+        });
+
+        // --- IndexedDB for IR Storage ---
+        const dbName = "GuitarDAW_DB";
+        const storeName = "IR_Store";
+        
+        function openDB() {
+            return new Promise((resolve, reject) => {
+                const req = indexedDB.open(dbName, 1);
+                req.onupgradeneeded = (e) => e.target.result.createObjectStore(storeName);
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(req.error);
+            });
+        }
+
+        async function saveIRToDB(arrayBuffer) {
+            const db = await openDB();
+            const tx = db.transaction(storeName, "readwrite");
+            tx.objectStore(storeName).put(arrayBuffer, "user_ir");
+        }
+
+        async function loadIRFromDB() {
+            const db = await openDB();
+            return new Promise((resolve) => {
+                const tx = db.transaction(storeName, "readonly");
+                const req = tx.objectStore(storeName).get("user_ir");
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => resolve(null);
+            });
+        }
+
+        async function clearIRFromDB() {
+            const db = await openDB();
+            const tx = db.transaction(storeName, "readwrite");
+            tx.objectStore(storeName).delete("user_ir");
+        }
+
+        // 起動時に保存されたIRを復元する
+        async function restoreIR() {
+            const savedBuffer = await loadIRFromDB();
+            if (savedBuffer && audioCtx) {
+                try {
+                    irStatus.innerText = "保存データ読込中...";
+                    irStatus.className = "text-[10px] bg-amber-900 text-amber-200 px-2 py-0.5 rounded-full";
+                    
+                    // デコードでバッファが消費されるためコピーを渡す
+                    const audioBuffer = await audioCtx.decodeAudioData(savedBuffer.slice(0));
+                    if(!convolverNode) convolverNode = audioCtx.createConvolver();
+                    convolverNode.buffer = audioBuffer;
+                    isIRLoaded = true;
+                    
+                    reconnectAudioGraph();
+                    
+                    irStatus.innerText = "保存済IR適用中";
+                    irStatus.className = "text-[10px] bg-green-900 text-green-200 px-2 py-0.5 rounded-full";
+                    btnClearIr.classList.remove('hidden');
+                } catch (e) {
+                    console.error(e);
+                    irStatus.innerText = "IR復元エラー";
+                    irStatus.className = "text-[10px] bg-red-900 text-red-200 px-2 py-0.5 rounded-full";
+                }
+            }
+        }
+
+        // IR（Impulse Response）ファイルの読み込み処理
+        irUpload.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file || !audioCtx) return;
+
+            try {
+                irStatus.innerText = "読込中...";
+                irStatus.className = "text-[10px] bg-amber-900 text-amber-200 px-2 py-0.5 rounded-full";
+                
+                const arrayBuffer = await file.arrayBuffer();
+                
+                // IndexedDBに永続化保存 (decodeAudioDataで消費される前に保存)
+                await saveIRToDB(arrayBuffer.slice(0));
+                
+                const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+                
+                if(!convolverNode) convolverNode = audioCtx.createConvolver();
+                convolverNode.buffer = audioBuffer;
+                isIRLoaded = true;
+
+                reconnectAudioGraph(); // 回路をつなぎ直す
+
+                irStatus.innerText = "適用済 (保存完了)";
+                irStatus.className = "text-[10px] bg-green-900 text-green-200 px-2 py-0.5 rounded-full";
+                btnClearIr.classList.remove('hidden');
+            } catch (error) {
+                console.error(error);
+                irStatus.innerText = "読込エラー (正常なWAVを選択して下さい)";
+                irStatus.className = "text-[10px] bg-red-900 text-red-200 px-2 py-0.5 rounded-full";
+            }
+        });
+
+        // IRデータのクリア処理
+        btnClearIr.addEventListener('click', async () => {
+            await clearIRFromDB();
+            isIRLoaded = false;
+            if(convolverNode) convolverNode.buffer = null;
+            reconnectAudioGraph();
+            
+            irUpload.value = ''; // 選択リセット
+            irStatus.innerText = "未読込 (Bypass)";
+            irStatus.className = "text-[10px] bg-red-900 text-red-200 px-2 py-0.5 rounded-full";
+            btnClearIr.classList.add('hidden');
+        });
+
+        btnInit.addEventListener('click', async () => {
+            try {
+                micStream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } 
+                });
+                
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
+                micSource = audioCtx.createMediaStreamSource(micStream);
+
+                // メーター用ノードの設定
+                analyserNode = audioCtx.createAnalyser();
+                analyserNode.fftSize = 256;
+                meterArray = new Float32Array(analyserNode.frequencyBinCount);
+                micSource.connect(analyserNode);
+                updateMeter(); // メーター描画ループ開始
+
+                setupAudioPipeline();
+                
+                // オーディオエンジン起動後に保存されたIRを復元
+                await restoreIR();
+
+                btnInit.innerText = "接続済み";
+                btnInit.classList.replace('bg-amber-600', 'bg-green-600');
+                btnInit.disabled = true;
+                document.getElementById('warning-msg').classList.add('hidden');
+                btnRecord.disabled = false;
+                btnRecord.classList.remove('opacity-50', 'cursor-not-allowed');
+            } catch (err) {
+                console.error(err);
+                const warnMsg = document.getElementById('warning-msg');
+                warnMsg.innerText = 'マイクのアクセスが許可されていないか、エラーが発生しました。';
+                warnMsg.classList.replace('bg-blue-900/50', 'bg-red-900/50');
+                warnMsg.classList.replace('text-blue-200', 'text-red-200');
+                warnMsg.classList.remove('hidden');
+            }
+        });
+
+        // 真空管風のソフトクリッピング（温かみのある歪み）に変更
+        function makeDistortionCurve(amount) {
+            const k = typeof amount === 'number' ? amount : 50;
+            const n_samples = 44100;
+            const curve = new Float32Array(n_samples);
+            for (let i = 0; i < n_samples; ++i) {
+                const x = (i * 2) / n_samples - 1;
+                // Tanhを用いたソフトクリッピング
+                curve[i] = Math.tanh(x * (1 + k / 10));
+            }
+            return curve;
+        }
+        
+        // リバーブ用のインパルス応答（IR）を動的に生成する
+        function generateReverbIR(ctx, timeValue) {
+            const duration = 0.5 + (timeValue / 100) * 4.5; // 0.5秒 〜 5秒の減衰
+            const decay = 2.0; 
+            const sampleRate = ctx.sampleRate;
+            const length = Math.floor(sampleRate * duration);
+            const impulse = ctx.createBuffer(2, length, sampleRate);
+            const left = impulse.getChannelData(0);
+            const right = impulse.getChannelData(1);
+            for (let i = 0; i < length; i++) {
+                const factor = Math.pow(1 - i / length, decay);
+                left[i] = (Math.random() * 2 - 1) * factor;
+                right[i] = (Math.random() * 2 - 1) * factor;
+            }
+            return impulse;
+        }
+
+        function setupAudioPipeline() {
+            gateNode = audioCtx.createScriptProcessor(512, 1, 1);
+            let lastEnv = 0; // エンベロープフォロワー用変数
+            gateNode.onaudioprocess = function(e) {
+                const inputData = e.inputBuffer.getChannelData(0);
+                const outputData = e.outputBuffer.getChannelData(0);
+                const threshold = (parseInt(knobGate.value) / 100) * 0.05; 
+                const attack = 0.05;
+                const release = 0.002;
+
+                for (let i = 0; i < inputData.length; i++) {
+                    const absIn = Math.abs(inputData[i]);
+                    // 音量の輪郭（エンベロープ）をなめらかに追従
+                    lastEnv = absIn > lastEnv ? lastEnv + attack * (absIn - lastEnv) : lastEnv - release * (lastEnv - absIn);
+                    
+                    // ソフトニー・ノイズゲート
+                    let gain = 1.0;
+                    if (lastEnv < threshold) {
+                        gain = Math.max(0, lastEnv / threshold);
+                    }
+                    outputData[i] = inputData[i] * Math.pow(gain, 2);
+                }
+            };
+
+            // ゲイン（歪み）
+            driveNode = audioCtx.createWaveShaper();
+            driveNode.oversample = '4x';
+            
+            // トーンスタック（EQ回路）
+            bassNode = audioCtx.createBiquadFilter();
+            bassNode.type = 'lowshelf';
+            bassNode.frequency.value = 250;
+            
+            midNode = audioCtx.createBiquadFilter();
+            midNode.type = 'peaking';
+            midNode.frequency.value = 800;
+            midNode.Q.value = 1.0; // 影響する帯域の幅
+            
+            trebleNode = audioCtx.createBiquadFilter();
+            trebleNode.type = 'highshelf';
+            trebleNode.frequency.value = 2500;
+
+            presenceNode = audioCtx.createBiquadFilter();
+            presenceNode.type = 'peaking';
+            presenceNode.frequency.value = 5000;
+            presenceNode.Q.value = 1.0;
+            
+            convolverNode = audioCtx.createConvolver();
+            
+            // リバーブ回路の初期化
+            reverbConvolver = audioCtx.createConvolver();
+            reverbDryGain = audioCtx.createGain();
+            reverbWetGain = audioCtx.createGain();
+
+            outputGainNode = audioCtx.createGain();
+            outputGainNode.gain.value = 1.0;
+            
+            monitorGainNode = audioCtx.createGain();
+            recordDelayNode = audioCtx.createDelay(1.0); // 最大1秒の遅延バッファ
+            
+            destinationNode = audioCtx.createMediaStreamDestination();
+
+            reconnectAudioGraph();
+            updateAudioNodes();
+
+            mediaRecorder = new MediaRecorder(destinationNode.stream, { mimeType: 'audio/webm' });
+            mediaRecorder.ondataavailable = e => {
+                if (e.data.size > 0) recordedChunks.push(e.data);
+            };
+            mediaRecorder.onstop = () => {
+                const blob = new Blob(recordedChunks, { type: 'audio/webm' });
+                const url = URL.createObjectURL(blob);
+                const audioEl = document.getElementById('audio-playback');
+                audioEl.src = url;
+                
+                const btnDl = document.getElementById('btn-download');
+                btnDl.href = url;
+                btnDl.download = `Guitar_Take_${Date.now()}.webm`;
+                
+                document.getElementById('result-area').classList.remove('hidden');
+                document.getElementById('result-area').classList.add('flex');
+            };
+        }
+
+        // IRの有無に応じて回路を動的にルーティング
+        function reconnectAudioGraph() {
+            if(!micSource) return;
+            
+            micSource.disconnect();
+            gateNode.disconnect();
+            driveNode.disconnect();
+            if(bassNode) {
+                bassNode.disconnect();
+                midNode.disconnect();
+                trebleNode.disconnect();
+                presenceNode.disconnect();
+            }
+            if(convolverNode) convolverNode.disconnect();
+            if(reverbConvolver) reverbConvolver.disconnect();
+            if(reverbDryGain) reverbDryGain.disconnect();
+            if(reverbWetGain) reverbWetGain.disconnect();
+            if(outputGainNode) outputGainNode.disconnect();
+
+            // 基本の直列接続: マイク -> ノイズゲート -> ゲイン -> EQ群
+            micSource.connect(gateNode);
+            gateNode.connect(driveNode);
+            driveNode.connect(bassNode);
+            bassNode.connect(midNode);
+            midNode.connect(trebleNode);
+            trebleNode.connect(presenceNode);
+
+            let lastAmpNode = presenceNode;
+            
+            if (isIRLoaded && convolverNode.buffer) {
+                // IRが読み込まれていれば、コンボリューションリバーブ（キャビシミュ）を通す
+                lastAmpNode.connect(convolverNode);
+                lastAmpNode = convolverNode;
+            }
+
+            // リバーブ（空間系）へのルーティング（ドライ音とウェット音を並列化）
+            lastAmpNode.connect(reverbDryGain);
+            lastAmpNode.connect(reverbConvolver);
+            reverbConvolver.connect(reverbWetGain);
+            
+            reverbDryGain.connect(outputGainNode);
+            reverbWetGain.connect(outputGainNode);
+
+            if (monitorGainNode) monitorGainNode.disconnect();
+            if (recordDelayNode) recordDelayNode.disconnect();
+
+            // 回路をモニター出力用と録音用に分岐
+            outputGainNode.connect(monitorGainNode);
+            monitorGainNode.connect(audioCtx.destination); // モニター用
+
+            outputGainNode.connect(recordDelayNode);
+            recordDelayNode.connect(destinationNode);      // 録音用
+        }
+
+        function updateAudioNodes() {
+            if (!audioCtx) return;
+            const driveAmount = parseInt(knobGain.value) * 4;
+            driveNode.curve = makeDistortionCurve(driveAmount);
+            
+            // EQノブ (0~100) を -15dB ~ +15dB のゲイン変化にマッピング (50が0dBでフラット)
+            const mapEQ = (val) => (val - 50) * 0.3;
+            if (bassNode) {
+                bassNode.gain.value = mapEQ(parseInt(knobBass.value));
+                midNode.gain.value = mapEQ(parseInt(knobMid.value));
+                trebleNode.gain.value = mapEQ(parseInt(knobTreble.value));
+                presenceNode.gain.value = mapEQ(parseInt(knobPresence.value));
+            }
+
+            // リバーブの設定更新
+            if (reverbDryGain && reverbWetGain && reverbConvolver) {
+                const mix = parseInt(knobRevMix.value) / 100;
+                reverbDryGain.gain.value = 1.0 - mix; // ドライ音の量
+                reverbWetGain.gain.value = mix;       // ウェット音の量
+                
+                const timeVal = parseInt(knobRevTime.value);
+                if (timeVal !== lastReverbTime) {
+                    reverbConvolver.buffer = generateReverbIR(audioCtx, timeVal);
+                    lastReverbTime = timeVal;
+                }
+            }
+
+            if (outputGainNode) {
+                outputGainNode.gain.value = parseInt(knobVolume.value) / 100;
+            }
+            if (monitorGainNode) {
+                monitorGainNode.gain.value = parseInt(knobMonitor.value) / 100;
+            }
+            if (recordDelayNode) {
+                const latency = parseInt(knobLatency.value);
+                // 録音データのみにディレイを適用してタイミングを合わせる (正の値のとき)
+                recordDelayNode.delayTime.value = Math.max(0, latency / 1000);
+            }
+        }
+
+        // マイク入力のレベルメーター描画処理
+        function updateMeter() {
+            if (analyserNode && !btnInit.disabled === false) { 
+                analyserNode.getFloatTimeDomainData(meterArray);
+                let maxVal = 0;
+                for(let i=0; i<meterArray.length; i++) {
+                    if(Math.abs(meterArray[i]) > maxVal) maxVal = Math.abs(meterArray[i]);
+                }
+                const levelPercent = Math.min(100, maxVal * 250); 
+                const meterEl = document.getElementById('meter-level');
+                if(meterEl) {
+                    meterEl.style.width = levelPercent + '%';
+                    if (levelPercent > 90) {
+                        meterEl.style.backgroundColor = '#ef4444'; // 赤 (クリップ注意)
+                    } else if (levelPercent > 60) {
+                        meterEl.style.backgroundColor = '#eab308'; // 黄
+                    } else {
+                        meterEl.style.backgroundColor = '#22c55e'; // 緑
+                    }
+                }
+            }
+            requestAnimationFrame(updateMeter);
+        }
+
+        btnRecord.addEventListener('click', () => {
+            if (!isRecording) {
+                recordedChunks = [];
+                mediaRecorder.start();
+                isRecording = true;
+                
+                btnRecord.classList.replace('bg-red-600', 'bg-zinc-800');
+                btnRecord.classList.add('border', 'border-red-500');
+                recordText.innerText = "録音停止";
+                recordIndicator.classList.remove('hidden');
+                document.getElementById('result-area').classList.add('hidden');
+            } else {
+                mediaRecorder.stop();
+                isRecording = false;
+                
+                btnRecord.classList.replace('bg-zinc-800', 'bg-red-600');
+                btnRecord.classList.remove('border', 'border-red-500');
+                recordText.innerText = "REC (録音開始)";
+                recordIndicator.classList.add('hidden');
+            }
+        });
+        
+        // --- Backing Track Controls ---
+        btUpload.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const url = URL.createObjectURL(file);
+                backingAudio.src = url;
+                btnBtPlay.disabled = false;
+                btnBtPlay.innerText = "Play Backing Track";
+                isBtPlaying = false;
+            }
+        });
+
+        btnBtPlay.addEventListener('click', () => {
+            if (!audioCtx) return; 
+            
+            if (!backingSource) {
+                backingSource = audioCtx.createMediaElementSource(backingAudio);
+                backingSource.connect(audioCtx.destination); // モニターのみ出力、録音には含めない
+            }
+
+            if (isBtPlaying) {
+                backingAudio.pause();
+                isBtPlaying = false;
+                btnBtPlay.innerText = "Play Backing Track";
+            } else {
+                backingAudio.play();
+                isBtPlaying = true;
+                btnBtPlay.innerText = "Stop Backing Track";
+            }
+        });
+
+        loadSettings();
+    </script>
+</body>
+</html>
